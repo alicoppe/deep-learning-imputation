@@ -19,7 +19,7 @@ build/
 *.ipynb_checkpoints
 
 # Data
-data/
+data/other/
 data/mimic/
 data/processed/
 *.csv
