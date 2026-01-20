@@ -65,6 +65,12 @@ uv remove <package>       # Remove dependency
 uv sync                   # Sync after git pull
 ```
 
+### Verify PyTorch in the venv
+```bash
+uv run -- python -m src.utils.torch_hello
+python src/utils/torch_hello.py
+```
+
 ## Best Practices
 
 - Never commit data or model checkpoints
