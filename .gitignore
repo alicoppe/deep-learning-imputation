@@ -1,0 +1,46 @@
+# Environment
+.env
+*.env
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Data
+data/
+data/mimic/
+data/processed/
+*.csv
+*.parquet
+*.h5
+*.pkl
+
+# Models
+models/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# uv
+.uv/
+uv.lock
