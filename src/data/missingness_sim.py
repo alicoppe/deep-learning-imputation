@@ -49,15 +49,12 @@ def simulate_mar_missingness_mask(data: pd.DataFrame, rate: float, seed: int = N
     numeric_cols = [c for c in data.select_dtypes(include=[np.number]).columns if c not in ID_COLS]
     targets = numeric_cols
 
-    default_drivers = []
-    if "acuity" in data.columns and "acuity" in numeric_cols:
-        default_drivers = ["acuity"]
-    else:
-        for c in numeric_cols:
-            if c not in targets:
-                default_drivers.append(c)
-            if len(default_drivers) >= 2:
-                break
+    has_acuity_driver = "acuity" in data.columns and "acuity" in numeric_cols
+    default_drivers = ["acuity"] if has_acuity_driver else []
+
+    assert drivers_map is not None or has_acuity_driver, (
+        "MAR requires either drivers_map to be provided or a numeric 'acuity' column."
+    )
 
     for tgt in targets:
         if tgt not in data.columns:
@@ -74,8 +71,12 @@ def simulate_mar_missingness_mask(data: pd.DataFrame, rate: float, seed: int = N
             drivers = default_drivers
 
         drivers = [c for c in drivers if c in data.columns and c != tgt]
-        if len(drivers) == 0:
+        if tgt == "acuity" and len(drivers) == 0:
             continue
+        assert len(drivers) > 0, (
+            f"No MAR drivers available for target '{tgt}'. "
+            "Provide drivers_map entries or include a numeric 'acuity' column."
+        )
 
         score = np.zeros(len(data), dtype=float)
         for drv in drivers:
