@@ -9,8 +9,14 @@ class MissingnessMechanism(Enum):
     MAR = "MAR"
     MNAR = "MNAR"
 
+
+DriversMap = dict[str, list[str]]
+
+
 def _sigmoid(x: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-x))
+
+
 def _zscore(s: pd.Series) -> np.ndarray:
     x = s.to_numpy(dtype=float, copy=True)
     mu = np.nanmean(x)
@@ -18,6 +24,8 @@ def _zscore(s: pd.Series) -> np.ndarray:
     if not np.isfinite(sd) or sd == 0:
         return np.zeros_like(x, dtype=float)
     return (np.nan_to_num(x, nan=mu) - mu) / sd
+
+
 def _calibrate_intercept(score: np.ndarray, eligible: np.ndarray, target_rate: float) -> float:
     if eligible.sum() == 0:
         return 0.0
@@ -33,49 +41,45 @@ def _calibrate_intercept(score: np.ndarray, eligible: np.ndarray, target_rate: f
             hi = mid
     return (lo + hi) / 2.0
 
-def simulate_mar_missingness_mask(data: pd.DataFrame, rate: float, seed: int = None, drivers_map = None, strength: float = 1.0) -> pd.DataFrame:
-    """
-    Returns a bool mask (False=missing) that adds MAR missingness to currently-observed entries.
-
-    Missingness for target col j depends on other observed variables (drivers), via:
-        p_i = sigmoid(alpha_j + strength * score_i)
-    where alpha_j is calibrated so mean(p_i over eligible rows) ~= rate.
-    """
+def simulate_mar_missingness_mask(
+    data: pd.DataFrame,
+    rate: float,
+    seed: int | None = None,
+    drivers_map: DriversMap | None = None,
+    strength: float = 1.0,
+) -> pd.DataFrame:
+    """Simulate MAR missingness and return a boolean mask (False = missing)."""
     if not (0 <= rate <= 1): raise ValueError("rate must be between 0 and 1")
 
     rng = np.random.default_rng(seed)
     mask = pd.DataFrame(True, index=data.index, columns=data.columns)
 
-    numeric_cols = [c for c in data.select_dtypes(include=[np.number]).columns if c not in ID_COLS]
-    targets = numeric_cols
+    numeric_cols = [
+        c for c in data.select_dtypes(include=[np.number]).columns if c not in ID_COLS
+    ]
+    has_acuity_driver = "acuity" in numeric_cols
 
-    has_acuity_driver = "acuity" in data.columns and "acuity" in numeric_cols
-    default_drivers = ["acuity"] if has_acuity_driver else []
-
-    assert drivers_map is not None or has_acuity_driver, (
-        "MAR requires either drivers_map to be provided or a numeric 'acuity' column."
-    )
+    if drivers_map is None:
+        assert has_acuity_driver, (
+            "MAR requires either drivers_map to be provided or a numeric 'acuity' column."
+        )
+        targets = [c for c in numeric_cols if c != "acuity"]
+        drivers_map = {tgt: ["acuity"] for tgt in targets}
+    else:
+        targets = numeric_cols
 
     for tgt in targets:
-        if tgt not in data.columns:
-            continue
+        assert tgt in drivers_map, (
+            f"drivers_map must include an entry for target '{tgt}'."
+        )
 
         eligible = data[tgt].notna().to_numpy()
         if eligible.sum() == 0:
             continue
 
-        drivers = None
-        if drivers_map is not None:
-            drivers = drivers_map.get(tgt)
-        if not drivers:
-            drivers = default_drivers
-
-        drivers = [c for c in drivers if c in data.columns and c != tgt]
-        if tgt == "acuity" and len(drivers) == 0:
-            continue
+        drivers = [c for c in drivers_map[tgt] if c in data.columns and c != tgt]
         assert len(drivers) > 0, (
-            f"No MAR drivers available for target '{tgt}'. "
-            "Provide drivers_map entries or include a numeric 'acuity' column."
+            "Ensure drivers_map lists at least one valid driver column."
         )
 
         score = np.zeros(len(data), dtype=float)
@@ -91,15 +95,11 @@ def simulate_mar_missingness_mask(data: pd.DataFrame, rate: float, seed: int = N
         u = rng.random(len(data))
         drop = eligible & (u < p)
         mask.loc[data.index[drop], tgt] = False
-        mask &= data.notna()
+    mask &= data.notna()
     return mask
 
 def simulate_mnar_missingness_mask(data: pd.DataFrame, rate: float, seed: int = None, strength: float = 1.0, targets = None) -> pd.DataFrame:
-    """
-    MNAR via self-masking: missingness of tgt depends on tgt's own value.
-    p_i = sigmoid(alpha + strength * zscore(tgt_i))
-    alpha calibrated so mean(p_i over eligible rows) ~= rate.
-    """
+    """Simulate MNAR missingness (self-masking) and return a boolean mask."""
     if not (0 <= rate <= 1):
         raise ValueError("rate must be between 0 and 1")
 
@@ -132,8 +132,16 @@ def simulate_mnar_missingness_mask(data: pd.DataFrame, rate: float, seed: int = 
     return mask
 
 
-def simulate_missingness(data: pd.DataFrame, mechanism: MissingnessMechanism, rate: float, seed: int = None) -> pd.DataFrame:
-    """Return a boolean mask (False=missing) following the requested missingness mechanism."""
+def simulate_missingness(
+    data: pd.DataFrame,
+    mechanism: MissingnessMechanism,
+    rate: float,
+    seed: int | None = None,
+    *,
+    drivers_map: DriversMap | None = None,
+    strength: float = 1.0,
+) -> pd.DataFrame:
+    """Return a boolean mask (False = missing) for the requested mechanism."""
     if not (0 <= rate <= 1): raise ValueError("rate must be between 0 and 1")
 
     mask = pd.DataFrame(True, index=data.index, columns=data.columns)
@@ -151,9 +159,11 @@ def simulate_missingness(data: pd.DataFrame, mechanism: MissingnessMechanism, ra
                 submask, index=data.index, columns=data.columns
             ).loc[:, numeric_cols]
         case MissingnessMechanism.MAR:
-            mask = simulate_mar_missingness_mask(data, rate, seed, strength=1.0)
+            mask = simulate_mar_missingness_mask(
+                data, rate, seed, drivers_map=drivers_map, strength=strength
+            )
         case MissingnessMechanism.MNAR:
-            mask = simulate_mnar_missingness_mask(data, rate, seed, strength=1.0)
+            mask = simulate_mnar_missingness_mask(data, rate, seed, strength=strength)
         case _:
             raise ValueError("Unsupported missingness mechanism")
     mask &= data.notna()

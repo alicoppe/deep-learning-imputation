@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 NUMERIC_COLS = ["temperature", "heartrate", "resprate", "o2sat", "sbp", "dbp", "pain", "acuity"]
@@ -38,11 +39,13 @@ def load_processed_ed_data(root: str | Path = ROOT) -> pd.DataFrame:
 
     triage[NUMERIC_COLS] = triage[NUMERIC_COLS].apply(pd.to_numeric, errors="coerce")
 
-    in_range_mask = pd.Series(True, index=triage.index)
     for col, (low, high) in FEASIBLE_RANGES.items():
-        in_range_mask &= triage[col].isna() | ((triage[col] >= low) & (triage[col] <= high))
+        out_of_range = triage[col].notna() & (
+            (triage[col] < low) | (triage[col] > high)
+        )
+        triage.loc[out_of_range, col] = np.nan
 
-    triage_clean = triage.loc[in_range_mask].copy()
+    triage_clean = triage.copy()
     triage_dedup = (
         triage_clean.sort_values("stay_id")
         .drop_duplicates(subset="stay_id", keep="first")
@@ -62,5 +65,4 @@ def load_processed_ed_data(root: str | Path = ROOT) -> pd.DataFrame:
     ]
 
     ed_triage = edstays[ed_cols].merge(triage_dedup, on="stay_id", how="inner", suffixes=("_stay", ""))
-    print(type(ed_triage))
     return ed_triage
