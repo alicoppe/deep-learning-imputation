@@ -48,7 +48,7 @@ def load_processed_ed_data(root: str | Path = ROOT) -> pd.DataFrame:
     """
     Outputs preprocessed ED + triage data
 
-    Guarentees:
+    Guarantees:
     - Stay length > 0 (outtime > intime)
     """
     root_path = _resolve_data_root(root)
