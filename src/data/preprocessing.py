@@ -88,6 +88,25 @@ def load_processed_ed_data(root: str | Path = ROOT) -> pd.DataFrame:
 
     return ed_triage
 
+def make_time_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Encodes intime as cyclical sin/cos features (hour-of-day, day-of-week, month).
+    Returns a new DataFrame with columns: hour_sin, hour_cos, dow_sin, dow_cos, month_sin, month_cos.
+    """
+    intime = pd.to_datetime(df["intime"])
+    hour  = intime.dt.hour + intime.dt.minute / 60.0
+    dow   = intime.dt.dayofweek
+    month = intime.dt.month
+    return pd.DataFrame({
+        "hour_sin":  np.sin(2 * np.pi * hour / 24),
+        "hour_cos":  np.cos(2 * np.pi * hour / 24),
+        "dow_sin":   np.sin(2 * np.pi * dow / 7),
+        "dow_cos":   np.cos(2 * np.pi * dow / 7),
+        "month_sin": np.sin(2 * np.pi * (month - 1) / 12),
+        "month_cos": np.cos(2 * np.pi * (month - 1) / 12),
+    }, index=df.index)
+
+
 if __name__ == "__main__":
     df = load_processed_ed_data()
     print(df.head())
