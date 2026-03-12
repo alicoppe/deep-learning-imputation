@@ -44,3 +44,6 @@ models/
 # uv
 .uv/
 uv.lock
+
+# results
+results/
