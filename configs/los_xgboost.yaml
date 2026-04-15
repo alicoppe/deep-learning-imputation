@@ -1,0 +1,25 @@
+task: length_of_stay
+seed: 42
+quick: false
+
+data:
+  embeddings: false
+
+# missingness:
+#   mechanism: MCAR
+#   rate: 0.3
+#   strength: 1.0
+#   columns: null
+#   drivers_map: null
+
+model:
+  type: xgboost
+  params:
+    n_estimators: 2000
+    max_depth: 6
+    learning_rate: 0.05
+    subsample: 1.0
+    colsample_bytree: 1.0
+    min_child_weight: 1
+    early_stopping_rounds: 50
+    n_jobs: 4

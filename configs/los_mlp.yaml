@@ -1,0 +1,24 @@
+task: length_of_stay
+seed: 42
+quick: false
+
+data:
+  embeddings: false
+
+# Simulated missingness — comment out or set rate: 0 to disable
+# missingness:
+#   mechanism: MCAR   # MCAR | MAR | MNAR
+#   rate: 0.3
+#   strength: 1.0
+#   columns: null     # null = task default (numeric triage vitals)
+#   drivers_map: null # MAR only; null = use acuity as default driver
+
+model:
+  type: mlp
+  params:
+    hidden_dims: [512, 256, 128]
+    dropout: 0.2
+    epochs: 60
+    patience: 10
+    batch_size: 512
+    lr: 0.001
