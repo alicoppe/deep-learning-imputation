@@ -1,14 +1,15 @@
 """
-Plot sweep results from results/sweep/summary.csv.
+Plot sweep results from a sweep_summary.csv file.
 
 Usage:
-  python src/analysis/plot_sweep.py
-  python src/analysis/plot_sweep.py --csv results/sweep/summary.csv --out results/sweep/
+  python src/analysis/plot_sweep.py                          # auto-detect most recent
+  python src/analysis/plot_sweep.py --csv results/length_of_stay/20260415_143201/sweep_summary.csv
 """
 
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -173,14 +174,23 @@ def _save(fig, path: Path) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--csv", type=Path, default=REPO_ROOT / "results" / "sweep" / "summary.csv")
+    ap.add_argument("--csv", type=Path, default=None, help="Path to sweep_summary.csv (auto-detects most recent if omitted)")
     ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args()
 
-    out_dir = args.out or args.csv.parent
+    csv_path = args.csv
+    if csv_path is None:
+        # Find the most recent sweep_summary.csv under results/
+        candidates = sorted(REPO_ROOT.glob("results/**/sweep_summary.csv"), key=lambda p: p.stat().st_mtime)
+        if not candidates:
+            print("No sweep_summary.csv found under results/. Pass --csv explicitly.")
+            sys.exit(1)
+        csv_path = candidates[-1]
 
-    print(f"Loading {args.csv} ...")
-    df = load(args.csv)
+    out_dir = args.out or csv_path.parent
+
+    print(f"Loading {csv_path} ...")
+    df = load(csv_path)
     print(f"  {len(df)} successful runs  ({df['model.type'].nunique()} models, "
           f"{df['missingness.mechanism'].nunique()} mechanisms, "
           f"{df['missingness.rate'].nunique()} rates, "

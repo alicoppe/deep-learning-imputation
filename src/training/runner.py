@@ -6,11 +6,13 @@ import copy
 import itertools
 import json
 import time
+from datetime import datetime
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import yaml
 
 from src.data.pipeline import run_pipeline
 from src.tasks.length_of_stay import LOSTask
@@ -30,7 +32,7 @@ MODEL_REGISTRY = {
 REPO_ROOT = next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").exists())
 
 
-def run(config: dict) -> dict:
+def run(config: dict, out_dir: Path | None = None) -> dict:
     """Execute a single training run defined by config. Returns metrics dict."""
     t0 = time.time()
 
@@ -54,7 +56,7 @@ def run(config: dict) -> dict:
         if model_key == "mlp":
             params["epochs"] = min(params.get("epochs", 60), 10)
         elif model_key == "xgboost":
-            params["n_estimators"] = min(params.get("n_estimators", 2000), 200)
+            params["n_estimators"] = min(params.get("n_estimators", 2000), 100)
 
     model = MODEL_REGISTRY[model_key](**params)
 
@@ -77,7 +79,11 @@ def run(config: dict) -> dict:
     elapsed = time.time() - t0
     _print_metrics(model_key, metrics, elapsed)
 
-    out_dir = _resolve_output_dir(config)
+    if out_dir is None:
+        task_key = config["task"]
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_dir = REPO_ROOT / "results" / task_key / timestamp
+
     _save_results(out_dir, config, metrics, result, splits, y_pred, model, model_key)
 
     return metrics
@@ -88,12 +94,20 @@ def run_sweep(config: dict) -> None:
     sweep_params = config["sweep"]
     defaults = config.get("defaults", {})
 
-    # Build list of (key_path, values) pairs
     keys = list(sweep_params.keys())
     value_lists = [sweep_params[k] for k in keys]
 
     combos = list(itertools.product(*value_lists))
     print(f"Sweep: {len(combos)} runs  ({' × '.join(str(len(v)) for v in value_lists)} combos)\n")
+
+    # Create sweep group folder
+    task_key = defaults.get("task", "unknown")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    sweep_dir = REPO_ROOT / "results" / task_key / timestamp
+    sweep_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save the original sweep config at the group level
+    (sweep_dir / "config.yaml").write_text(yaml.dump(config, default_flow_style=False))
 
     all_results = []
     for i, combo in enumerate(combos, 1):
@@ -101,23 +115,27 @@ def run_sweep(config: dict) -> None:
         for key_path, value in zip(keys, combo):
             _set_nested(run_cfg, key_path.split("."), value)
 
+        # Build a descriptive subfolder name from the swept parameters
+        run_label = _make_run_label(keys, combo)
+        run_dir = sweep_dir / run_label
+
         print(f"\n{'═' * 60}")
-        print(f"  Run {i}/{len(combos)}  " + "  ".join(f"{k}={v}" for k, v in zip(keys, combo)))
+        print(f"  Run {i}/{len(combos)}  {run_label}")
         print(f"{'═' * 60}")
 
         try:
-            metrics = run(run_cfg)
-            row = {"run": i, **{k: v for k, v in zip(keys, combo)}, **metrics, "status": "ok"}
+            metrics = run(run_cfg, out_dir=run_dir)
+            row = {"run": i, "label": run_label,
+                   **{k: v for k, v in zip(keys, combo)}, **metrics, "status": "ok"}
         except Exception as e:
             print(f"  ERROR: {e}")
-            row = {"run": i, **{k: v for k, v in zip(keys, combo)}, "status": f"error: {e}"}
+            row = {"run": i, "label": run_label,
+                   **{k: v for k, v in zip(keys, combo)}, "status": f"error: {e}"}
 
         all_results.append(row)
 
-    # Write sweep summary
-    sweep_dir = REPO_ROOT / "results" / "sweep"
-    sweep_dir.mkdir(parents=True, exist_ok=True)
-    summary_path = sweep_dir / "summary.csv"
+    # Write sweep summary alongside the condition subfolders
+    summary_path = sweep_dir / "sweep_summary.csv"
     pd.DataFrame(all_results).to_csv(summary_path, index=False)
     print(f"\nSweep complete. Summary → {summary_path}")
 
@@ -125,6 +143,27 @@ def run_sweep(config: dict) -> None:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _make_run_label(keys: list[str], combo: tuple) -> str:
+    """Build a compact subfolder name from swept parameter values.
+
+    Strips common prefixes (e.g. 'missingness.' → '') to keep names short.
+    Example: MCAR_mlp_0.25_seed42
+    """
+    parts = []
+    for key, val in zip(keys, combo):
+        short_key = key.rsplit(".", 1)[-1]  # missingness.mechanism → mechanism
+        # For well-known keys just use the value; for others include the key
+        if short_key in ("mechanism", "type"):
+            parts.append(str(val))
+        elif short_key == "seed":
+            parts.append(f"seed{val}")
+        elif short_key == "rate":
+            parts.append(f"rate{val}")
+        else:
+            parts.append(f"{short_key}{val}")
+    return "_".join(parts)
+
 
 def _print_header(config: dict, task, model_key: str) -> None:
     import torch
@@ -149,14 +188,6 @@ def _print_metrics(model_key: str, metrics: dict, elapsed: float) -> None:
     print(f"  Elapsed: {elapsed:.1f}s\n")
 
 
-def _resolve_output_dir(config: dict) -> Path:
-    from datetime import datetime
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    task_key = config["task"]
-    return REPO_ROOT / "results" / task_key / timestamp
-
-
 def _save_results(
     out_dir: Path,
     config: dict,
@@ -178,8 +209,10 @@ def _save_results(
     }
     (out_dir / "results.json").write_text(json.dumps(results_json, indent=2))
 
-    import yaml
-    (out_dir / "config.yaml").write_text(yaml.dump(config, default_flow_style=False))
+    # For direct (non-sweep) runs, save config alongside results
+    config_path = out_dir / "config.yaml"
+    if not config_path.exists():
+        config_path.write_text(yaml.dump(config, default_flow_style=False))
 
     # Training curve
     if result.train_losses:
