@@ -160,26 +160,6 @@ def plot_heatmap(df: pd.DataFrame, out_dir: Path, metric: str, ylabel: str, high
     _save(fig, out_dir / "heatmap.png")
 
 
-def plot_seed_variance(df: pd.DataFrame, out_dir: Path, metric: str, ylabel: str) -> None:
-    """Strip plot showing per-seed metric spread across all conditions."""
-    df = df.copy()
-    df["condition"] = df["model.type"].str.upper() + " | " + df["missingness.mechanism"] + " " + (df["missingness.rate"] * 100).astype(int).astype(str) + "%"
-    conditions = df.groupby("condition")[metric].mean().sort_values().index.tolist()
-
-    fig, ax = plt.subplots(figsize=(8, max(5, len(conditions) * 0.35)))
-    for i, cond in enumerate(conditions):
-        vals = df[df["condition"] == cond][metric].values
-        ax.scatter(vals, [i] * len(vals), s=40, zorder=3,
-                   color=MODEL_COLORS.get(cond.split(" | ")[0].lower(), "grey"), alpha=0.8)
-        ax.plot([vals.min(), vals.max()], [i, i], color="grey", linewidth=1, zorder=2)
-    ax.set_yticks(range(len(conditions)))
-    ax.set_yticklabels(conditions, fontsize=8)
-    ax.set_xlabel(ylabel)
-    ax.set_title(f"Per-Seed {ylabel} Spread by Condition", fontsize=12, fontweight="bold")
-    ax.grid(axis="x", alpha=0.4)
-    plt.tight_layout()
-    _save(fig, out_dir / "seed_variance.png")
-
 
 def _save(fig, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -221,7 +201,6 @@ def main() -> None:
     plot_metric_vs_rate(df, out_dir, metric, ylabel)
     plot_model_comparison(df, out_dir, metric, ylabel)
     plot_heatmap(df, out_dir, metric, ylabel, higher)
-    plot_seed_variance(df, out_dir, metric, ylabel)
     print(f"\nDone. All plots → {out_dir}/")
 
 

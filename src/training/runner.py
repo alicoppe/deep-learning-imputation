@@ -147,7 +147,7 @@ def run_sweep(config: dict) -> None:
 
     # Auto-generate plots from the summary
     try:
-        from src.analysis.plot_sweep import load, _detect_metric, plot_metric_vs_rate, plot_model_comparison, plot_heatmap, plot_seed_variance
+        from src.analysis.plot_sweep import load, _detect_metric, plot_metric_vs_rate, plot_model_comparison, plot_heatmap
         df_summary = load(summary_path)
         if not df_summary.empty:
             metric, ylabel, higher = _detect_metric(df_summary, None)
@@ -155,7 +155,6 @@ def run_sweep(config: dict) -> None:
             plot_metric_vs_rate(df_summary, sweep_dir, metric, ylabel)
             plot_model_comparison(df_summary, sweep_dir, metric, ylabel)
             plot_heatmap(df_summary, sweep_dir, metric, ylabel, higher)
-            plot_seed_variance(df_summary, sweep_dir, metric, ylabel)
             print(f"Plots → {sweep_dir}/")
     except Exception as e:
         print(f"  Warning: sweep plots failed ({e})")
