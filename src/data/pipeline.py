@@ -9,7 +9,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 from src.data.missingness_sim import MissingnessMechanism, simulate_missingness
-from src.data.preprocessing import load_processed_ed_data
 
 
 def run_pipeline(task, config: dict) -> dict:
@@ -21,7 +20,7 @@ def run_pipeline(task, config: dict) -> dict:
       y_train, y_val, y_test
       feature_names
     """
-    df = load_processed_ed_data()
+    df = task.load_data()
     X, y = task.build_features(df, config)
     del df
 

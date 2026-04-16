@@ -32,8 +32,22 @@ def load(csv_path: Path) -> pd.DataFrame:
     return df
 
 
-def plot_mae_vs_rate(df: pd.DataFrame, out_dir: Path) -> None:
-    """MAE vs missingness rate, one line per mechanism, faceted by model."""
+def _detect_metric(df: pd.DataFrame, override: str | None) -> tuple[str, str, bool]:
+    """Return (col, y_label, higher_is_better)."""
+    if override:
+        col = override
+        higher = col in ("auroc", "auprc", "r2", "accuracy", "f1")
+        label = col.upper()
+        return col, label, higher
+    if "mae" in df.columns:
+        return "mae", "MAE (hours)", False
+    if "auroc" in df.columns:
+        return "auroc", "AUROC", True
+    raise ValueError(f"Cannot auto-detect metric column. Available: {list(df.columns)}")
+
+
+def plot_metric_vs_rate(df: pd.DataFrame, out_dir: Path, metric: str, ylabel: str) -> None:
+    """Primary metric vs missingness rate, one line per mechanism, faceted by model."""
     models = sorted(df["model.type"].unique())
     fig, axes = plt.subplots(1, len(models), figsize=(6 * len(models), 5), sharey=True)
     if len(models) == 1:
@@ -45,7 +59,7 @@ def plot_mae_vs_rate(df: pd.DataFrame, out_dir: Path) -> None:
             m = sub[sub["missingness.mechanism"] == mech]
             if m.empty:
                 continue
-            agg = m.groupby("missingness.rate")["mae"].agg(["mean", "std"]).reset_index()
+            agg = m.groupby("missingness.rate")[metric].agg(["mean", "std"]).reset_index()
             ax.plot(
                 agg["missingness.rate"], agg["mean"],
                 marker=MECHANISM_MARKERS[mech], label=mech, linewidth=2, markersize=7,
@@ -62,14 +76,14 @@ def plot_mae_vs_rate(df: pd.DataFrame, out_dir: Path) -> None:
         ax.legend(title="Mechanism")
         ax.grid(axis="y", alpha=0.4)
 
-    axes[0].set_ylabel("MAE (hours)")
-    fig.suptitle("MAE vs Missingness Rate", fontsize=14, fontweight="bold", y=1.02)
+    axes[0].set_ylabel(ylabel)
+    fig.suptitle(f"{ylabel} vs Missingness Rate", fontsize=14, fontweight="bold", y=1.02)
     plt.tight_layout()
-    _save(fig, out_dir / "mae_vs_rate.png")
+    _save(fig, out_dir / "metric_vs_rate.png")
 
 
-def plot_model_comparison(df: pd.DataFrame, out_dir: Path) -> None:
-    """Side-by-side MAE for MLP vs XGBoost at each (mechanism, rate) combo."""
+def plot_model_comparison(df: pd.DataFrame, out_dir: Path, metric: str, ylabel: str) -> None:
+    """Side-by-side primary metric for MLP vs XGBoost at each (mechanism, rate) combo."""
     rates = sorted(df["missingness.rate"].unique())
     mechs = [m for m in MECHANISM_ORDER if m in df["missingness.mechanism"].unique()]
 
@@ -86,24 +100,24 @@ def plot_model_comparison(df: pd.DataFrame, out_dir: Path) -> None:
         for c_idx, rate in enumerate(rates):
             ax = axes[r_idx, c_idx]
             sub = df[(df["missingness.mechanism"] == mech) & (df["missingness.rate"] == rate)]
-            means = [sub[sub["model.type"] == m]["mae"].mean() for m in models]
-            stds = [sub[sub["model.type"] == m]["mae"].std() for m in models]
-            bars = ax.bar(x, means, width, yerr=stds, capsize=4,
-                          color=[MODEL_COLORS.get(m, "grey") for m in models])
+            means = [sub[sub["model.type"] == m][metric].mean() for m in models]
+            stds = [sub[sub["model.type"] == m][metric].std() for m in models]
+            ax.bar(x, means, width, yerr=stds, capsize=4,
+                   color=[MODEL_COLORS.get(m, "grey") for m in models])
             ax.set_xticks(x)
             ax.set_xticklabels([m.upper() for m in models])
             ax.set_title(f"{mech}  rate={rate:.0%}", fontsize=9)
             ax.grid(axis="y", alpha=0.4)
             if c_idx == 0:
-                ax.set_ylabel("MAE (hours)")
+                ax.set_ylabel(ylabel)
 
-    fig.suptitle("Model Comparison by Missingness Condition", fontsize=13, fontweight="bold", y=1.01)
+    fig.suptitle(f"Model Comparison by Missingness Condition", fontsize=13, fontweight="bold", y=1.01)
     plt.tight_layout()
     _save(fig, out_dir / "model_comparison.png")
 
 
-def plot_heatmap(df: pd.DataFrame, out_dir: Path) -> None:
-    """Heatmap of mean MAE: rows = mechanism, cols = rate, faceted by model."""
+def plot_heatmap(df: pd.DataFrame, out_dir: Path, metric: str, ylabel: str, higher_is_better: bool) -> None:
+    """Heatmap of mean primary metric: rows = mechanism, cols = rate, faceted by model."""
     models = sorted(df["model.type"].unique())
     rates = sorted(df["missingness.rate"].unique())
     mechs = [m for m in MECHANISM_ORDER if m in df["missingness.mechanism"].unique()]
@@ -112,9 +126,11 @@ def plot_heatmap(df: pd.DataFrame, out_dir: Path) -> None:
     if len(models) == 1:
         axes = [axes]
 
-    all_vals = df.groupby(["model.type", "missingness.mechanism", "missingness.rate"])["mae"].mean()
+    all_vals = df.groupby(["model.type", "missingness.mechanism", "missingness.rate"])[metric].mean()
     vmin = all_vals.min()
     vmax = all_vals.max()
+    # Good = green. For lower-is-better metrics (MAE, logloss) reverse the colormap.
+    cmap = "RdYlGn" if higher_is_better else "RdYlGn_r"
 
     for ax, model in zip(axes, models):
         matrix = np.full((len(mechs), len(rates)), np.nan)
@@ -124,7 +140,7 @@ def plot_heatmap(df: pd.DataFrame, out_dir: Path) -> None:
                     matrix[r_idx, c_idx] = all_vals[(model, mech, rate)]
                 except KeyError:
                     pass
-        im = ax.imshow(matrix, aspect="auto", vmin=vmin, vmax=vmax, cmap="RdYlGn_r")
+        im = ax.imshow(matrix, aspect="auto", vmin=vmin, vmax=vmax, cmap=cmap)
         ax.set_xticks(range(len(rates)))
         ax.set_xticklabels([f"{r:.0%}" for r in rates])
         ax.set_yticks(range(len(mechs)))
@@ -137,29 +153,29 @@ def plot_heatmap(df: pd.DataFrame, out_dir: Path) -> None:
                 if not np.isnan(v):
                     ax.text(c_idx, r_idx, f"{v:.3f}", ha="center", va="center", fontsize=9,
                             color="white" if v > (vmin + vmax) / 2 else "black")
-        plt.colorbar(im, ax=ax, label="MAE (hours)")
+        plt.colorbar(im, ax=ax, label=ylabel)
 
-    fig.suptitle("Mean MAE Heatmap", fontsize=13, fontweight="bold")
+    fig.suptitle(f"Mean {ylabel} Heatmap", fontsize=13, fontweight="bold")
     plt.tight_layout()
     _save(fig, out_dir / "heatmap.png")
 
 
-def plot_seed_variance(df: pd.DataFrame, out_dir: Path) -> None:
-    """Strip plot showing per-seed MAE spread across all conditions."""
+def plot_seed_variance(df: pd.DataFrame, out_dir: Path, metric: str, ylabel: str) -> None:
+    """Strip plot showing per-seed metric spread across all conditions."""
     df = df.copy()
     df["condition"] = df["model.type"].str.upper() + " | " + df["missingness.mechanism"] + " " + (df["missingness.rate"] * 100).astype(int).astype(str) + "%"
-    conditions = df.groupby("condition")["mae"].mean().sort_values().index.tolist()
+    conditions = df.groupby("condition")[metric].mean().sort_values().index.tolist()
 
     fig, ax = plt.subplots(figsize=(8, max(5, len(conditions) * 0.35)))
     for i, cond in enumerate(conditions):
-        vals = df[df["condition"] == cond]["mae"].values
+        vals = df[df["condition"] == cond][metric].values
         ax.scatter(vals, [i] * len(vals), s=40, zorder=3,
                    color=MODEL_COLORS.get(cond.split(" | ")[0].lower(), "grey"), alpha=0.8)
         ax.plot([vals.min(), vals.max()], [i, i], color="grey", linewidth=1, zorder=2)
     ax.set_yticks(range(len(conditions)))
     ax.set_yticklabels(conditions, fontsize=8)
-    ax.set_xlabel("MAE (hours)")
-    ax.set_title("Per-Seed MAE Spread by Condition", fontsize=12, fontweight="bold")
+    ax.set_xlabel(ylabel)
+    ax.set_title(f"Per-Seed {ylabel} Spread by Condition", fontsize=12, fontweight="bold")
     ax.grid(axis="x", alpha=0.4)
     plt.tight_layout()
     _save(fig, out_dir / "seed_variance.png")
@@ -176,6 +192,8 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", type=Path, default=None, help="Path to sweep_summary.csv (auto-detects most recent if omitted)")
     ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument("--metric", type=str, default=None,
+                    help="Metric column to plot (auto-detects mae or auroc if omitted)")
     args = ap.parse_args()
 
     csv_path = args.csv
@@ -196,11 +214,14 @@ def main() -> None:
           f"{df['missingness.rate'].nunique()} rates, "
           f"{df['seed'].nunique()} seeds)\n")
 
+    metric, ylabel, higher = _detect_metric(df, args.metric)
+    print(f"  Metric: {metric}  ({ylabel})  higher_is_better={higher}\n")
+
     print("Generating plots ...")
-    plot_mae_vs_rate(df, out_dir)
-    plot_model_comparison(df, out_dir)
-    plot_heatmap(df, out_dir)
-    plot_seed_variance(df, out_dir)
+    plot_metric_vs_rate(df, out_dir, metric, ylabel)
+    plot_model_comparison(df, out_dir, metric, ylabel)
+    plot_heatmap(df, out_dir, metric, ylabel, higher)
+    plot_seed_variance(df, out_dir, metric, ylabel)
     print(f"\nDone. All plots → {out_dir}/")
 
 

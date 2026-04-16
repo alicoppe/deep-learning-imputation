@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 from sklearn.metrics import r2_score
 
+from src.data.embeddings import load_chiefcomplaint_embeddings
 from src.data.preprocessing import CAT_COLS, NUMERIC_COLS, make_time_features
 from src.tasks.base_task import BaseTask
-
-REPO_ROOT = next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").exists())
 
 TARGET_COL = "stay_len"
 CAT_FEAT_COLS = [c for c in CAT_COLS if c != "disposition"]
@@ -19,6 +16,9 @@ NUMERIC_FEAT_COLS = [c for c in NUMERIC_COLS if c != TARGET_COL]
 
 
 class LOSTask(BaseTask):
+    task_type = "regression"
+    n_classes = 1
+
     @property
     def name(self) -> str:
         return "length_of_stay"
@@ -40,7 +40,7 @@ class LOSTask(BaseTask):
             {f"{c}_missing": df[c].isna().astype(float) for c in NUMERIC_FEAT_COLS if df[c].isna().any()},
             index=df.index,
         )
-        emb_feats = _load_embeddings(df) if use_embeddings else None
+        emb_feats = load_chiefcomplaint_embeddings(df) if use_embeddings else None
 
         parts = [time_feats, cat_feats, num_feats, miss_feats]
         if emb_feats is not None:
@@ -66,31 +66,21 @@ class LOSTask(BaseTask):
             "r2": lambda y_true, y_pred: float(r2_score(y_true, y_pred)),
         }
 
+    def plot_predictions(self, y_true, y_pred, out_path) -> None:
+        import matplotlib.pyplot as plt
 
-def _load_embeddings(df: pd.DataFrame) -> pd.DataFrame:
-    from sentence_transformers import SentenceTransformer
+        fig, ax = plt.subplots(figsize=(6, 6))
+        n = min(3000, len(y_true))
+        ax.scatter(y_true[:n], y_pred[:n], alpha=0.2, s=5)
+        ax.plot([0, 40], [0, 40], "r--", label="Perfect prediction")
+        ax.set_xlabel("Actual stay length (h)")
+        ax.set_ylabel("Predicted stay length (h)")
+        ax.set_title("Predicted vs Actual")
+        ax.set_xlim(0, 40)
+        ax.set_ylim(0, 40)
+        ax.legend()
+        plt.tight_layout()
+        plt.savefig(out_path, dpi=150)
+        plt.close()
 
-    cache = REPO_ROOT / "data" / "processed" / "chiefcomplaint_embeddings.npy"
-    cache.parent.mkdir(parents=True, exist_ok=True)
 
-    cc_missing = df["chiefcomplaint"].isna()
-    print(f"  Chief complaint: {cc_missing.mean()*100:.1f}% missing ({cc_missing.sum():,} rows)")
-
-    if cache.exists():
-        print(f"  Loading cached embeddings from {cache.name} ...")
-        arr = np.load(cache)
-    else:
-        print("  Computing Bio_ClinicalBERT embeddings (this may take several minutes) ...")
-        arr = SentenceTransformer("emilyalsentzer/Bio_ClinicalBERT").encode(
-            df["chiefcomplaint"].fillna("").tolist(),
-            batch_size=256,
-            show_progress_bar=True,
-            convert_to_numpy=True,
-        )
-        np.save(cache, arr)
-        print(f"  Saved embeddings → {cache}")
-
-    print(f"  Embedding shape: {arr.shape}\n")
-    out = pd.DataFrame(arr, index=df.index, columns=[f"cc_{i}" for i in range(arr.shape[1])])
-    out["chiefcomplaint_missing"] = cc_missing.astype(float)
-    return out

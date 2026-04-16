@@ -16,12 +16,14 @@ import yaml
 
 from src.data.pipeline import run_pipeline
 from src.tasks.length_of_stay import LOSTask
+from src.tasks.mortality import InHospitalMortalityTask
 from src.training.base_model import TrainResult
 from src.training.mlp_model import MLPModel
 from src.training.xgboost_model import XGBoostModel
 
 TASK_REGISTRY = {
     "length_of_stay": LOSTask,
+    "in_hospital_mortality": InHospitalMortalityTask,
 }
 
 MODEL_REGISTRY = {
@@ -50,6 +52,10 @@ def run(config: dict, out_dir: Path | None = None) -> dict:
     # Convert hidden_dims to list (YAML may give it as a list already)
     if "hidden_dims" in params and not isinstance(params["hidden_dims"], list):
         params["hidden_dims"] = list(params["hidden_dims"])
+
+    # Inject task-type so models can branch on loss / output / predict
+    params["task_type"] = task.task_type
+    params["n_classes"] = task.n_classes
 
     # Reduce epochs/rounds for --quick mode
     if config.get("quick"):
@@ -84,7 +90,7 @@ def run(config: dict, out_dir: Path | None = None) -> dict:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         out_dir = REPO_ROOT / "results" / task_key / timestamp
 
-    _save_results(out_dir, config, metrics, result, splits, y_pred, model, model_key)
+    _save_results(out_dir, config, metrics, result, splits, y_pred, model, model_key, task)
 
     return metrics
 
@@ -138,6 +144,21 @@ def run_sweep(config: dict) -> None:
     summary_path = sweep_dir / "sweep_summary.csv"
     pd.DataFrame(all_results).to_csv(summary_path, index=False)
     print(f"\nSweep complete. Summary → {summary_path}")
+
+    # Auto-generate plots from the summary
+    try:
+        from src.analysis.plot_sweep import load, _detect_metric, plot_metric_vs_rate, plot_model_comparison, plot_heatmap, plot_seed_variance
+        df_summary = load(summary_path)
+        if not df_summary.empty:
+            metric, ylabel, higher = _detect_metric(df_summary, None)
+            print(f"\nGenerating sweep plots (metric={metric}) ...")
+            plot_metric_vs_rate(df_summary, sweep_dir, metric, ylabel)
+            plot_model_comparison(df_summary, sweep_dir, metric, ylabel)
+            plot_heatmap(df_summary, sweep_dir, metric, ylabel, higher)
+            plot_seed_variance(df_summary, sweep_dir, metric, ylabel)
+            print(f"Plots → {sweep_dir}/")
+    except Exception as e:
+        print(f"  Warning: sweep plots failed ({e})")
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +218,7 @@ def _save_results(
     y_pred: np.ndarray,
     model,
     model_key: str,
+    task,
 ) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -221,28 +243,15 @@ def _save_results(
         ax.plot(result.val_losses, label="Validation")
         xlabel = "Epoch" if model_key == "mlp" else "Round"
         ax.set_xlabel(xlabel)
-        ax.set_ylabel("MAE (hours)")
+        ax.set_ylabel("Loss")
         ax.set_title(f"{model_key.upper()} Training Curve")
         ax.legend()
         plt.tight_layout()
         plt.savefig(out_dir / "training_curve.png", dpi=150)
         plt.close()
 
-    # Predicted vs actual
-    y_test = splits["y_test"]
-    fig, ax = plt.subplots(figsize=(6, 6))
-    n = min(3000, len(y_test))
-    ax.scatter(y_test[:n], y_pred[:n], alpha=0.2, s=5)
-    ax.plot([0, 40], [0, 40], "r--", label="Perfect prediction")
-    ax.set_xlabel("Actual stay length (h)")
-    ax.set_ylabel("Predicted stay length (h)")
-    ax.set_title(f"{model_key.upper()} — Predicted vs Actual")
-    ax.set_xlim(0, 40)
-    ax.set_ylim(0, 40)
-    ax.legend()
-    plt.tight_layout()
-    plt.savefig(out_dir / "predicted_vs_actual.png", dpi=150)
-    plt.close()
+    # Task-specific prediction plot
+    task.plot_predictions(splits["y_test"], y_pred, out_dir / "predictions.png")
 
     # XGBoost feature importance
     if model_key == "xgboost" and hasattr(model, "feature_importances"):

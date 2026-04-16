@@ -44,6 +44,13 @@ def _resolve_data_root(root: str | Path) -> Path:
 ROOT = _resolve_data_root(os.environ["MIMIC_ED_DATA_PATH"])
 
 
+def load_admissions(root: str | Path | None = None) -> pd.DataFrame:
+    """Load MIMIC-IV hosp/admissions.csv.gz (just the columns needed for mortality)."""
+    root_path = _resolve_data_root(root or os.environ["MIMIC_HOSP_DATA_PATH"])
+    cols = ["hadm_id", "hospital_expire_flag"]
+    return pd.read_csv(root_path / "admissions.csv.gz", usecols=cols)
+
+
 def load_processed_ed_data(root: str | Path = ROOT) -> pd.DataFrame:
     """
     Outputs preprocessed ED + triage data

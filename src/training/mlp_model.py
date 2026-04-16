@@ -48,6 +48,8 @@ class MLPModel(BaseModel):
         batch_size: int = 512,
         lr: float = 1e-3,
         device: str | None = None,
+        task_type: str = "regression",
+        n_classes: int = 1,
         **kwargs,  # absorb unrelated params from shared sweep config
     ):
         self.hidden_dims = hidden_dims or [512, 256, 128]
@@ -57,6 +59,7 @@ class MLPModel(BaseModel):
         self.batch_size = batch_size
         self.lr = lr
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+        self.task_type = task_type
         self._model: _MLP | None = None
 
     def train(
@@ -71,7 +74,17 @@ class MLPModel(BaseModel):
         y_val_t = torch.tensor(y_val, dtype=torch.float32).to(self.device)
 
         model = _MLP(X_train.shape[1], list(self.hidden_dims), self.dropout).to(self.device)
-        criterion = nn.L1Loss()
+
+        if self.task_type == "classification":
+            n_pos = float(y_train.sum())
+            n_neg = float(len(y_train) - n_pos)
+            pos_weight = torch.tensor([n_neg / max(n_pos, 1)], dtype=torch.float32).to(self.device)
+            criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+            print(f"  Class balance: {n_pos:.0f} pos / {n_neg:.0f} neg  "
+                  f"(pos_weight={pos_weight.item():.2f})")
+        else:
+            criterion = nn.L1Loss()
+
         optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode="min", patience=3, factor=0.5, min_lr=1e-5
@@ -110,7 +123,7 @@ class MLPModel(BaseModel):
                 no_improve += 1
 
             print(
-                f"  Epoch {epoch+1:3d}/{self.epochs}  train={epoch_train:.3f}  val={val_loss:.3f}"
+                f"  Epoch {epoch+1:3d}/{self.epochs}  train={epoch_train:.4f}  val={val_loss:.4f}"
                 f"  lr={optimizer.param_groups[0]['lr']:.1e}" + (" *" if improved else "")
             )
 
@@ -119,16 +132,18 @@ class MLPModel(BaseModel):
                 break
 
         model.load_state_dict(best_state)
-        print(f"  Best val MAE: {best_val:.3f} h\n")
+        print(f"  Best val loss: {best_val:.4f}\n")
         self._model = model
         return TrainResult(train_losses=train_losses, val_losses=val_losses)
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         self._model.eval()
         with torch.no_grad():
-            return (
+            logits = (
                 self._model(torch.tensor(X, dtype=torch.float32).to(self.device))
                 .squeeze()
                 .cpu()
-                .numpy()
             )
+        if self.task_type == "classification":
+            return torch.sigmoid(logits).numpy()
+        return logits.numpy()

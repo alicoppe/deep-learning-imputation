@@ -1,10 +1,9 @@
-"""XGBoost model wrapper."""
+"""XGBoost model wrapper (regression and binary classification)."""
 
 from __future__ import annotations
 
 import numpy as np
 import torch
-from xgboost import XGBRegressor
 
 from src.training.base_model import BaseModel, TrainResult
 
@@ -24,24 +23,27 @@ class XGBoostModel(BaseModel):
         n_jobs: int = 4,
         device: str | None = None,
         random_state: int = 42,
+        task_type: str = "regression",
+        n_classes: int = 1,
         **kwargs,  # absorb unrelated params from shared sweep config
     ):
-        xgb_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self._model = XGBRegressor(
+        self._xgb_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self._kwargs = dict(
             n_estimators=n_estimators,
             max_depth=max_depth,
             learning_rate=learning_rate,
             subsample=subsample,
             colsample_bytree=colsample_bytree,
             min_child_weight=min_child_weight,
-            objective="reg:absoluteerror",
             tree_method="hist",
-            device=xgb_device,
+            device=self._xgb_device,
             early_stopping_rounds=early_stopping_rounds,
             n_jobs=n_jobs,
             random_state=random_state,
             verbosity=0,
         )
+        self.task_type = task_type
+        self._model = None
 
     def train(
         self,
@@ -50,6 +52,28 @@ class XGBoostModel(BaseModel):
         X_val: np.ndarray,
         y_val: np.ndarray,
     ) -> TrainResult:
+        if self.task_type == "classification":
+            from xgboost import XGBClassifier
+            n_pos = float(y_train.sum())
+            n_neg = float(len(y_train) - n_pos)
+            spw = n_neg / max(n_pos, 1)
+            print(f"  Class balance: {n_pos:.0f} pos / {n_neg:.0f} neg  "
+                  f"(scale_pos_weight={spw:.2f})")
+            self._model = XGBClassifier(
+                **self._kwargs,
+                objective="binary:logistic",
+                eval_metric="logloss",
+                scale_pos_weight=spw,
+            )
+            loss_key = "logloss"
+        else:
+            from xgboost import XGBRegressor
+            self._model = XGBRegressor(
+                **self._kwargs,
+                objective="reg:absoluteerror",
+            )
+            loss_key = "mae"
+
         self._model.fit(
             X_train,
             y_train,
@@ -59,11 +83,13 @@ class XGBoostModel(BaseModel):
         print()
         evals = self._model.evals_result()
         return TrainResult(
-            train_losses=evals["validation_0"]["mae"],
-            val_losses=evals["validation_1"]["mae"],
+            train_losses=evals["validation_0"][loss_key],
+            val_losses=evals["validation_1"][loss_key],
         )
 
     def predict(self, X: np.ndarray) -> np.ndarray:
+        if self.task_type == "classification":
+            return self._model.predict_proba(X)[:, 1]
         return self._model.predict(X)
 
     @property

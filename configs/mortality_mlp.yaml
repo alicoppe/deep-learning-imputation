@@ -1,0 +1,23 @@
+task: in_hospital_mortality
+seed: 42
+quick: false
+
+data:
+  embeddings: false
+
+# missingness:
+#   mechanism: MCAR   # MCAR | MAR | MNAR
+#   rate: 0.3
+#   strength: 1.0
+#   columns: null     # null = task default (numeric triage vitals)
+#   drivers_map: null # MAR only
+
+model:
+  type: mlp
+  params:
+    hidden_dims: [512, 256, 128]
+    dropout: 0.2
+    epochs: 60
+    patience: 10
+    batch_size: 512
+    lr: 0.001
