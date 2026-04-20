@@ -1,0 +1,11 @@
+# Meta-config: runs all baseline sweeps then generates plots.
+# Usage: python run.py configs/full_baseline.yaml
+
+runs:
+  - configs/los_baseline_sweep.yaml
+  - configs/mortality_baseline_sweep.yaml
+  - configs/los_missingness_sweep.yaml
+  - configs/mortality_missingness_sweep.yaml
+
+plots:
+  - src/analysis/plot_baselines.py
