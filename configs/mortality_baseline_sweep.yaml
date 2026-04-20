@@ -1,22 +1,15 @@
-# Sweep: missingness mechanism × rate × model × seed
-# Generates 3 mechanisms × 3 rates × 2 models × 3 seeds = 54 runs
-# Run with: python run.py configs/los_missingness_sweep.yaml
+# Clean mortality baselines: 2 models × 3 seeds = 6 runs
+# Run with: python run.py configs/mortality_baseline_sweep.yaml
 
 sweep:
   seed: [42, 123, 456]
-  missingness.mechanism: [MCAR, MAR, MNAR]
-  missingness.rate: [0.1, 0.25, 0.5]
   model.type: [mlp, xgboost]
 
 defaults:
-  task: length_of_stay
+  task: in_hospital_mortality
   quick: false
   data:
     embeddings: false
-  missingness:
-    strength: 1.0
-    columns: null
-    drivers_map: null
   model:
     params:
       # MLP defaults (ignored when model.type=xgboost)
