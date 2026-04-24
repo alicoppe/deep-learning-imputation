@@ -18,6 +18,7 @@ from src.data.pipeline import run_pipeline
 from src.tasks.length_of_stay import LOSTask
 from src.tasks.mortality import InHospitalMortalityTask
 from src.training.base_model import TrainResult
+from src.training.contexttab_model import ContextTabModel
 from src.training.mlp_model import MLPModel
 from src.training.xgboost_model import XGBoostModel
 
@@ -29,6 +30,7 @@ TASK_REGISTRY = {
 MODEL_REGISTRY = {
     "mlp": MLPModel,
     "xgboost": XGBoostModel,
+    "contexttab": ContextTabModel,
 }
 
 REPO_ROOT = next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").exists())

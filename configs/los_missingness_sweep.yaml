@@ -1,12 +1,12 @@
 # Sweep: missingness mechanism × rate × model × seed
-# Generates 3 mechanisms × 3 rates × 2 models × 3 seeds = 54 runs
+# Generates 3 mechanisms × 3 rates × 3 models × 3 seeds = 81 runs
 # Run with: python run.py configs/los_missingness_sweep.yaml
 
 sweep:
   seed: [42, 123, 456]
   missingness.mechanism: [MCAR, MAR, MNAR]
   missingness.rate: [0.1, 0.25, 0.5]
-  model.type: [mlp, xgboost]
+  model.type: [mlp, xgboost, contexttab]
 
 defaults:
   task: length_of_stay
@@ -35,3 +35,6 @@ defaults:
       min_child_weight: 1
       early_stopping_rounds: 50
       n_jobs: 4
+      # ConTextTab defaults (ignored when model.type != contexttab)
+      bagging: 8
+      max_context_rows: 8192
