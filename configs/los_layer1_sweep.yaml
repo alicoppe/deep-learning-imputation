@@ -26,7 +26,8 @@ defaults:
       batch_size: 512
       lr: 0.001
       # XGBoost defaults (ignored when model.type != xgboost)
-      n_estimators: 4            # TabPFN Nature default; XGBoost override below
+      # n_estimators intentionally omitted — each model's __init__ default
+      # fires (XGBoost=2000, TabPFN=4) to avoid a cross-model collision.
       max_depth: 6
       learning_rate: 0.05
       early_stopping_rounds: 50
