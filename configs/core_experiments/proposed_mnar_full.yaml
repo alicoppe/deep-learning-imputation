@@ -1,0 +1,12 @@
+# Meta-runner: all proposed sweeps (ConTextTab + TabPFN v2), MNAR only.
+# Usage: python run.py configs/core_experiments/proposed_mnar_full.yaml
+# Total: 18 + 18 + 54 + 54 = 144 runs.
+
+runs:
+  - configs/core_experiments/mortality_mnar_proposed_sweep.yaml
+  - configs/core_experiments/los_mnar_proposed_sweep.yaml
+  - configs/core_experiments/mortality_mnar_proposed_imputers_sweep.yaml
+  - configs/core_experiments/los_mnar_proposed_imputers_sweep.yaml
+
+plots:
+  - src/analysis/plot_sweep.py

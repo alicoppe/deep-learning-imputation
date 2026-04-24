@@ -1,0 +1,22 @@
+# Mortality — proposed architectures (ConTextTab + TabPFN v2) under MNAR only.
+# 3 seeds x 3 rates x 2 models = 18 runs
+
+sweep:
+  seed: [42, 123, 456]
+  missingness.rate: [0.1, 0.25, 0.5]
+  model.type: [contexttab, tabpfn]
+
+defaults:
+  task: in_hospital_mortality
+  quick: false
+  data:
+    embeddings: false
+  missingness:
+    mechanism: MNAR
+    strength: 1.0
+    columns: null
+    drivers_map: null
+  model:
+    params:
+      bagging: 8
+      max_context_rows: 8192

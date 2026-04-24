@@ -1,0 +1,12 @@
+# Meta-runner: all proposed sweeps (ConTextTab + TabPFN v2), ALL mechanisms.
+# Usage: python run.py configs/core_experiments/proposed_full.yaml
+# Total: 54 + 54 + 162 + 162 = 432 runs.
+
+runs:
+  - configs/core_experiments/mortality_all_proposed_sweep.yaml
+  - configs/core_experiments/los_all_proposed_sweep.yaml
+  - configs/core_experiments/mortality_all_proposed_imputers_sweep.yaml
+  - configs/core_experiments/los_all_proposed_imputers_sweep.yaml
+
+plots:
+  - src/analysis/plot_sweep.py
