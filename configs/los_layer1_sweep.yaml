@@ -1,0 +1,36 @@
+# LOS Layer 1: models sweep (FMs + MLP + native XGBoost)
+# 3 seeds x 3 mechanisms x 3 rates x 4 models = 108 runs
+
+sweep:
+  seed: [42, 123, 456]
+  missingness.mechanism: [MCAR, MAR, MNAR]
+  missingness.rate: [0.1, 0.25, 0.5]
+  model.type: [mlp, xgboost, contexttab, tabpfn]
+
+defaults:
+  task: length_of_stay
+  quick: false
+  data:
+    embeddings: false
+  missingness:
+    strength: 1.0
+    columns: null
+    drivers_map: null
+  model:
+    params:
+      # MLP defaults (ignored when model.type != mlp)
+      hidden_dims: [512, 256, 128]
+      dropout: 0.2
+      epochs: 60
+      patience: 10
+      batch_size: 512
+      lr: 0.001
+      # XGBoost defaults (ignored when model.type != xgboost)
+      n_estimators: 4            # TabPFN Nature default; XGBoost override below
+      max_depth: 6
+      learning_rate: 0.05
+      early_stopping_rounds: 50
+      n_jobs: 4
+      # ConTextTab / TabPFN defaults
+      bagging: 8
+      max_context_rows: 8192

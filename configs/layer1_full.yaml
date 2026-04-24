@@ -1,0 +1,12 @@
+# Layer 1 master: run all four sweeps then generate plots.
+# Usage: python run.py configs/layer1_full.yaml
+
+runs:
+  - configs/mortality_layer1_sweep.yaml
+  - configs/mortality_imputers_sweep.yaml
+  - configs/los_layer1_sweep.yaml
+  - configs/los_imputers_sweep.yaml
+
+plots:
+  - src/analysis/plot_sweep.py
+  - src/analysis/plot_baselines.py
