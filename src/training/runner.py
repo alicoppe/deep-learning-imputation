@@ -20,7 +20,8 @@ from src.tasks.mortality import InHospitalMortalityTask
 from src.training.base_model import TrainResult
 from src.training.contexttab_model import ContextTabModel
 from src.training.mlp_model import MLPModel
-from src.training.xgboost_model import XGBoostModel
+from src.training.tabpfn_model import TabPFNModel
+from src.training.xgboost_model import XGBoostImputedModel, XGBoostModel
 
 TASK_REGISTRY = {
     "length_of_stay": LOSTask,
@@ -30,7 +31,9 @@ TASK_REGISTRY = {
 MODEL_REGISTRY = {
     "mlp": MLPModel,
     "xgboost": XGBoostModel,
+    "xgboost_imputed": XGBoostImputedModel,
     "contexttab": ContextTabModel,
+    "tabpfn": TabPFNModel,
 }
 
 REPO_ROOT = next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").exists())
