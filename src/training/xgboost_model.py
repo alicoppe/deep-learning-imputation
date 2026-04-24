@@ -95,3 +95,8 @@ class XGBoostModel(BaseModel):
     @property
     def feature_importances(self) -> np.ndarray:
         return self._model.feature_importances_
+
+
+class XGBoostImputedModel(XGBoostModel):
+    """XGBoost consuming imputed+scaled data (for fair imputer comparisons)."""
+    needs_imputed = True

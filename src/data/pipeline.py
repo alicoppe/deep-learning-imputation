@@ -42,7 +42,7 @@ def run_pipeline(task, config: dict) -> dict:
     # Imputed + scaled variants (fit only on train)
     numeric_feat_indices = [feature_names.index(c) for c in task.numeric_feature_cols() if c in feature_names]
 
-    imputer = SimpleImputer(strategy="median")
+    imputer = _build_imputer(config.get("imputation", {}), seed)
     X_train = X_tr_raw.copy()
     X_val = X_val_raw.copy()
     X_test = X_test_raw.copy()
@@ -113,3 +113,41 @@ def _inject_missingness(
 
     print()
     return results[0], results[1], results[2]
+
+
+def _build_imputer(imp_cfg: dict, seed: int):
+    """Build an imputer from config. Default: median (preserves existing behavior)."""
+    method = imp_cfg.get("method", "median")
+
+    if method in ("median", "mean"):
+        return SimpleImputer(strategy=method)
+
+    if method == "mice":
+        from sklearn.experimental import enable_iterative_imputer  # noqa: F401
+        from sklearn.impute import IterativeImputer
+        from sklearn.linear_model import BayesianRidge
+        return IterativeImputer(
+            estimator=BayesianRidge(),
+            max_iter=imp_cfg.get("max_iter", 10),
+            random_state=seed,
+        )
+
+    if method == "missforest":
+        from sklearn.experimental import enable_iterative_imputer  # noqa: F401
+        from sklearn.impute import IterativeImputer
+        from sklearn.ensemble import RandomForestRegressor
+        return IterativeImputer(
+            estimator=RandomForestRegressor(
+                n_estimators=imp_cfg.get("n_estimators", 100),
+                n_jobs=imp_cfg.get("n_jobs", 4),
+                random_state=seed,
+            ),
+            max_iter=imp_cfg.get("max_iter", 5),
+            random_state=seed,
+        )
+
+    if method in ("gain", "miwae", "notmiwae", "csdi", "remasker"):
+        from src.data.deep_imputers import build_deep_imputer
+        return build_deep_imputer(method, imp_cfg, seed)
+
+    raise ValueError(f"Unknown imputation method: {method}")

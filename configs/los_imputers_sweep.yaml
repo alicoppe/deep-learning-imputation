@@ -1,0 +1,29 @@
+# LOS imputer comparison - all use xgboost_imputed downstream
+# 3 x 3 x 3 x 5 = 135 runs. Remaining 4 imputers unlock when Mika fills stubs.
+
+sweep:
+  seed: [42, 123, 456]
+  missingness.mechanism: [MCAR, MAR, MNAR]
+  missingness.rate: [0.1, 0.25, 0.5]
+  imputation.method: [median, mean, mice, missforest, gain]
+  # Add miwae, notmiwae, csdi, remasker to this list once Mika's stubs land.
+
+defaults:
+  task: length_of_stay
+  quick: false
+  data:
+    embeddings: false
+  missingness:
+    strength: 1.0
+  model:
+    type: xgboost_imputed
+    params:
+      n_estimators: 2000
+      max_depth: 6
+      learning_rate: 0.05
+      early_stopping_rounds: 50
+      n_jobs: 4
+  imputation:
+    max_iter: 10
+    iterations: 10000
+    batch_size: 128

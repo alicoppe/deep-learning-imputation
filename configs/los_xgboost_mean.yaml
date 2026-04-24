@@ -1,0 +1,18 @@
+task: length_of_stay
+seed: 42
+quick: false
+
+data:
+  embeddings: false
+
+imputation:
+  method: mean
+
+model:
+  type: xgboost_imputed
+  params:
+    n_estimators: 2000
+    max_depth: 6
+    learning_rate: 0.05
+    early_stopping_rounds: 50
+    n_jobs: 4

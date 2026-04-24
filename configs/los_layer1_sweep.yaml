@@ -1,12 +1,11 @@
-# Sweep: missingness mechanism × rate × model × seed
-# Generates 3 mechanisms × 3 rates × 3 models × 3 seeds = 81 runs
-# Run with: python run.py configs/los_missingness_sweep.yaml
+# LOS Layer 1: models sweep (FMs + MLP + native XGBoost)
+# 3 seeds x 3 mechanisms x 3 rates x 4 models = 108 runs
 
 sweep:
   seed: [42, 123, 456]
   missingness.mechanism: [MCAR, MAR, MNAR]
   missingness.rate: [0.1, 0.25, 0.5]
-  model.type: [mlp, xgboost, contexttab]
+  model.type: [mlp, xgboost, contexttab, tabpfn]
 
 defaults:
   task: length_of_stay
@@ -19,22 +18,20 @@ defaults:
     drivers_map: null
   model:
     params:
-      # MLP defaults (ignored when model.type=xgboost)
+      # MLP defaults (ignored when model.type != mlp)
       hidden_dims: [512, 256, 128]
       dropout: 0.2
       epochs: 60
       patience: 10
       batch_size: 512
       lr: 0.001
-      # XGBoost defaults (ignored when model.type=mlp)
-      n_estimators: 2000
+      # XGBoost defaults (ignored when model.type != xgboost)
+      # n_estimators intentionally omitted — each model's __init__ default
+      # fires (XGBoost=2000, TabPFN=4) to avoid a cross-model collision.
       max_depth: 6
       learning_rate: 0.05
-      subsample: 1.0
-      colsample_bytree: 1.0
-      min_child_weight: 1
       early_stopping_rounds: 50
       n_jobs: 4
-      # ConTextTab defaults (ignored when model.type != contexttab)
+      # ConTextTab / TabPFN defaults
       bagging: 8
       max_context_rows: 8192

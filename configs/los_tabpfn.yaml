@@ -1,0 +1,13 @@
+task: length_of_stay
+seed: 42
+quick: false
+
+data:
+  embeddings: false
+
+model:
+  type: tabpfn
+  params:
+    n_estimators: 4           # Hollmann et al. 2025 Nature default
+    max_context_rows: 10000
+    # TabPFN v2 weights are pinned in the wrapper via ModelVersion.V2
