@@ -59,8 +59,8 @@ def load_processed_ed_data(root: str | Path = ROOT) -> pd.DataFrame:
     - Stay length > 0 (outtime > intime)
     """
     root_path = _resolve_data_root(root)
-    triage = pd.read_csv(root_path / "triage.csv")
-    edstays = pd.read_csv(root_path / "edstays.csv")
+    triage  = pd.read_csv(next(p for p in [root_path / "triage.csv.gz",  root_path / "triage.csv"]  if p.exists()))
+    edstays = pd.read_csv(next(p for p in [root_path / "edstays.csv.gz", root_path / "edstays.csv"] if p.exists()))
 
     triage[_TRIAGE_NUMERIC_COLS] = triage[_TRIAGE_NUMERIC_COLS].apply(pd.to_numeric, errors="coerce")
 
@@ -94,6 +94,99 @@ def load_processed_ed_data(root: str | Path = ROOT) -> pd.DataFrame:
     print(f"Dropped {n - len(ed_triage):,} rows: non-positive stay length (outtime <= intime)")
 
     return ed_triage
+
+def apply_subset(df: pd.DataFrame, subset_cfg: dict) -> pd.DataFrame:
+    """Filter the ED dataframe to a named clinical subset.
+
+    Config shape:
+      type: acuity            values: [1, 2]
+      type: disposition       values: [ADMITTED]
+      type: chief_complaint   keywords: [fall, weakness, confusion]
+      type: icd_chapter       chapter: cardiovascular
+          (cardiovascular | respiratory | gastrointestinal | musculoskeletal
+           | mental_health | genitourinary | injury_trauma | oncology)
+    """
+
+    subset_type = subset_cfg.get("type")
+    n_before = len(df)
+
+    if subset_type == "acuity":
+        values = {float(v) for v in subset_cfg["values"]}
+        df = df[df["acuity"].isin(values)].reset_index(drop=True)
+
+    elif subset_type == "disposition":
+        values = {v.upper() for v in subset_cfg["values"]}
+        df = df[df["disposition"].str.upper().isin(values)].reset_index(drop=True)
+
+    elif subset_type == "chief_complaint":
+        import re
+        pattern = "|".join(re.escape(kw) for kw in subset_cfg["keywords"])
+        mask = df["chiefcomplaint"].str.contains(pattern, case=False, na=False)
+        df = df[mask].reset_index(drop=True)
+
+    elif subset_type == "icd_chapter":
+        _ICD_CHAPTER_PREFIXES = {
+            "cardiovascular":   "I",
+            "respiratory":      "J",
+            "gastrointestinal": "K",
+            "musculoskeletal":  "M",
+            "mental_health":    "F",
+            "genitourinary":    "N",
+            "injury_trauma":    ("S", "T"),
+            "oncology":         "C",
+        }
+        chapter = subset_cfg["chapter"]
+        prefix = _ICD_CHAPTER_PREFIXES.get(chapter)
+        if prefix is None:
+            raise ValueError(f"Unknown ICD chapter '{chapter}'. Options: {list(_ICD_CHAPTER_PREFIXES)}")
+        diag_path = next(p for p in [ROOT / "diagnosis.csv.gz", ROOT / "diagnosis.csv"] if p.exists())
+        diag = pd.read_csv(diag_path, usecols=["stay_id", "seq_num", "icd_code", "icd_version"])
+        primary = diag[(diag["seq_num"] == 1) & (diag["icd_version"] == 10)].copy()
+        if isinstance(prefix, tuple):
+            in_chapter = primary["icd_code"].str.strip().str[0].isin(set(prefix))
+        else:
+            in_chapter = primary["icd_code"].str.strip().str.startswith(prefix)
+        stay_ids = set(primary.loc[in_chapter, "stay_id"])
+        df = df[df["stay_id"].isin(stay_ids)].reset_index(drop=True)
+
+    elif subset_type == "active_cancer_treatment":
+        # Identify patients on active systemic cancer treatment via home med reconciliation
+        # (medrecon table, recorded at triage — no outcome leakage).
+        #
+        # Excluded drug classes that are primarily used for non-cancer indications:
+        #   Folic Acid Analogs  → methotrexate for RA / psoriasis
+        #   Urea Derivatives    → hydroxyurea for sickle cell disease
+        #   Purine Analogs      → azathioprine for IBD / transplant / autoimmune
+        #   Dermatological antimetabolites / NSAIDs → topical treatments for actinic keratosis
+        #   Mast Cell Stabilizers  → misclassified in drug taxonomy, not chemotherapy
+        #   Progestins          → used for non-cancer hormonal indications
+        _EXCLUDED_CLASSES = {
+            "Antineoplastic - Antimetabolite - Folic Acid Analogs",
+            "Antineoplastic - Antimetabolite - Urea Derivatives",
+            "Antineoplastic - Antimetabolite - Purine Analogs",
+            "Dermatological - Antineoplastic Antimetabolites",
+            "Dermatological - Antineoplastic or Premalignant Lesions - NSAID's",
+            "Antineoplastic - Mast Cell Stabilizers",
+            "Antineoplastic - Progestins",
+        }
+        medrecon_path = next(
+            p for p in [ROOT / "medrecon.csv.gz", ROOT / "medrecon.csv"] if p.exists()
+        )
+        medrecon = pd.read_csv(medrecon_path, usecols=["stay_id", "etcdescription"])
+        desc_lower   = medrecon["etcdescription"].str.lower()
+        is_antineopl = desc_lower.str.contains("antineoplast", na=False)
+        is_excluded  = desc_lower.isin({c.lower() for c in _EXCLUDED_CLASSES})
+        stay_ids = set(medrecon[is_antineopl & ~is_excluded]["stay_id"])
+        df = df[df["stay_id"].isin(stay_ids)].reset_index(drop=True)
+
+    else:
+        raise ValueError(
+            f"Unknown subset type '{subset_type}'. "
+            "Options: acuity, disposition, chief_complaint, icd_chapter, active_cancer_treatment"
+        )
+
+    return df
+
 
 def make_time_features(df: pd.DataFrame) -> pd.DataFrame:
     """

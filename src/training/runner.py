@@ -192,7 +192,7 @@ def _make_run_label(keys: list[str], combo: tuple) -> str:
 
 def _print_header(config: dict, task, model_key: str) -> None:
     import torch
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     miss_cfg = config.get("missingness", {}) or {}
     miss_str = (
         f"{miss_cfg.get('mechanism', '')} rate={miss_cfg.get('rate', 0)}"

@@ -58,7 +58,13 @@ class MLPModel(BaseModel):
         self.patience = patience
         self.batch_size = batch_size
         self.lr = lr
-        self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+        self.device = torch.device(
+            device or (
+                "cuda" if torch.cuda.is_available() else
+                "mps"  if torch.backends.mps.is_available() else
+                "cpu"
+            )
+        )
         self.task_type = task_type
         self._model: _MLP | None = None
 
@@ -69,7 +75,14 @@ class MLPModel(BaseModel):
         X_val: np.ndarray,
         y_val: np.ndarray,
     ) -> TrainResult:
-        loader = DataLoader(_EDDataset(X_train, y_train), batch_size=self.batch_size, shuffle=True)
+        loader = DataLoader(
+            _EDDataset(X_train, y_train),
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=4,
+            pin_memory=(self.device.type == "cuda"),  # MPS doesn't benefit from pinned memory
+            persistent_workers=True,
+        )
         X_val_t = torch.tensor(X_val, dtype=torch.float32).to(self.device)
         y_val_t = torch.tensor(y_val, dtype=torch.float32).to(self.device)
 

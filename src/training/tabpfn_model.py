@@ -30,7 +30,11 @@ class TabPFNModel(BaseModel):
         **kwargs,  # absorb unrelated sweep-config params
     ):
         self.n_estimators = n_estimators
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device or (
+            "cuda" if torch.cuda.is_available() else
+            "mps"  if torch.backends.mps.is_available() else
+            "cpu"
+        )
         self.task_type = task_type
         self.n_classes = n_classes
         self.max_context_rows = max_context_rows

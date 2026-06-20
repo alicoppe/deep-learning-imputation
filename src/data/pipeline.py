@@ -21,6 +21,10 @@ def run_pipeline(task, config: dict) -> dict:
       feature_names
     """
     df = task.load_data()
+    subset_cfg = (config.get("data") or {}).get("subset")
+    if subset_cfg:
+        from src.data.preprocessing import apply_subset
+        df = apply_subset(df, subset_cfg)
     X, y = task.build_features(df, config)
     del df
 
