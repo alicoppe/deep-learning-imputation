@@ -21,6 +21,16 @@ uv sync
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 ```
 
+### macOS only: fix the torch/xgboost OpenMP conflict
+On macOS, torch and the xgboost wheel each load a separate `libomp`; two OpenMP
+runtimes in one process segfault (any run that uses torch then fits xgboost, e.g.
+the baseline sweeps). Run this once after every `uv sync` to make xgboost share
+torch's `libomp`:
+```bash
+./scripts/fix_macos_openmp.sh
+```
+No-op on Linux and when already patched.
+
 ### Configure Paths
 ```bash
 cp .env.example .env
