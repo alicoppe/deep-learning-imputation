@@ -40,13 +40,15 @@ class GAINImputer:
         self.seed = seed
         self._X_train = None
 
+    def _params(self):
+        return dict(batch_size=self.batch_size, hint_rate=self.hint_rate,
+                    alpha=self.alpha, iterations=self.iterations, seed=self.seed)
+
     def fit_transform(self, X):
         sys.path.insert(0, str(THIRD_PARTY / "GAIN"))
         from gain import gain
         self._X_train = X.copy()
-        params = dict(batch_size=self.batch_size, hint_rate=self.hint_rate,
-                      alpha=self.alpha, iterations=self.iterations)
-        return gain(X, params)
+        return gain(X, self._params())
 
     def transform(self, X):
         # GAIN's authors' code has no separate transform — concatenate
@@ -54,9 +56,7 @@ class GAINImputer:
         sys.path.insert(0, str(THIRD_PARTY / "GAIN"))
         from gain import gain
         combined = np.vstack([self._X_train, X])
-        params = dict(batch_size=self.batch_size, hint_rate=self.hint_rate,
-                      alpha=self.alpha, iterations=self.iterations)
-        imputed = gain(combined, params)
+        imputed = gain(combined, self._params())
         return imputed[len(self._X_train):]
 
 

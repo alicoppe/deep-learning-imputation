@@ -178,8 +178,14 @@ def _make_run_label(keys: list[str], combo: tuple) -> str:
     parts = []
     for key, val in zip(keys, combo):
         short_key = key.rsplit(".", 1)[-1]  # missingness.mechanism → mechanism
+        # A swept subset is a dict — render it from its 'name' (slugified) rather
+        # than dumping the mapping repr into the folder name.
+        if isinstance(val, dict):
+            label = val.get("name") or val.get("type") or "subset"
+            slug = "".join(c if c.isalnum() else "_" for c in str(label)).strip("_")
+            parts.append(slug)
         # For well-known keys just use the value; for others include the key
-        if short_key in ("mechanism", "type"):
+        elif short_key in ("mechanism", "type"):
             parts.append(str(val))
         elif short_key == "seed":
             parts.append(f"seed{val}")

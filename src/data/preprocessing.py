@@ -77,7 +77,10 @@ def load_processed_ed_data(root: str | Path = ROOT) -> pd.DataFrame:
     )
     print(f"Dropped {len(triage) - len(triage_dedup):,} rows: duplicate triage records for same stay_id")
 
-    ed_cols = ["stay_id", "hadm_id", "intime", "outtime", "gender", "race", "arrival_transport", "disposition"]
+    ed_cols = ["stay_id", "subject_id", "hadm_id", "intime", "outtime", "gender", "race", "arrival_transport", "disposition"]
+
+    # subject_id also lives in triage; drop it there so the stay_id merge doesn't collide.
+    triage_dedup = triage_dedup.drop(columns=["subject_id"], errors="ignore")
 
     n = len(edstays)
     ed_triage = edstays[ed_cols].merge(triage_dedup, on="stay_id", how="inner")
@@ -95,36 +98,47 @@ def load_processed_ed_data(root: str | Path = ROOT) -> pd.DataFrame:
 
     return ed_triage
 
-def apply_subset(df: pd.DataFrame, subset_cfg: dict) -> pd.DataFrame:
-    """Filter the ED dataframe to a named clinical subset.
+def _compute_approx_age(df: pd.DataFrame) -> pd.Series:
+    """De-identified age at ED visit: anchor_age + (intime_year - anchor_year), capped at 91.
 
-    Config shape:
-      type: acuity            values: [1, 2]
-      type: disposition       values: [ADMITTED]
-      type: chief_complaint   keywords: [fall, weakness, confusion]
-      type: icd_chapter       chapter: cardiovascular
-          (cardiovascular | respiratory | gastrointestinal | musculoskeletal
-           | mental_health | genitourinary | injury_trauma | oncology)
+    Requires ``subject_id`` in df; merges hosp/patients to recover anchor fields.
     """
+    pat_root = _resolve_data_root(os.environ["MIMIC_HOSP_DATA_PATH"])
+    pat_path = next(p for p in [pat_root / "patients.csv.gz", pat_root / "patients.csv"] if p.exists())
+    patients = pd.read_csv(pat_path, usecols=["subject_id", "anchor_age", "anchor_year"])
+    merged = df[["subject_id"]].merge(patients, on="subject_id", how="left")
+    intime_year = pd.to_datetime(df["intime"]).dt.year.to_numpy()
+    age = merged["anchor_age"].to_numpy() + (intime_year - merged["anchor_year"].to_numpy())
+    return pd.Series(age, index=df.index)
 
-    subset_type = subset_cfg.get("type")
-    n_before = len(df)
 
-    if subset_type == "acuity":
-        values = {float(v) for v in subset_cfg["values"]}
-        df = df[df["acuity"].isin(values)].reset_index(drop=True)
+def _subset_mask(df: pd.DataFrame, f: dict) -> pd.Series:
+    """Boolean mask (aligned to df.index) selecting rows matching a single filter spec."""
+    ftype = f.get("type")
 
-    elif subset_type == "disposition":
-        values = {v.upper() for v in subset_cfg["values"]}
-        df = df[df["disposition"].str.upper().isin(values)].reset_index(drop=True)
+    if ftype == "acuity":
+        values = {float(v) for v in f["values"]}
+        return df["acuity"].isin(values)
 
-    elif subset_type == "chief_complaint":
+    if ftype == "age":
+        age = _compute_approx_age(df)
+        mask = pd.Series(True, index=df.index)
+        if f.get("min") is not None:
+            mask &= age >= float(f["min"])
+        if f.get("max") is not None:
+            mask &= age <= float(f["max"])
+        return mask
+
+    if ftype == "disposition":
+        values = {v.upper() for v in f["values"]}
+        return df["disposition"].str.upper().isin(values)
+
+    if ftype == "chief_complaint":
         import re
-        pattern = "|".join(re.escape(kw) for kw in subset_cfg["keywords"])
-        mask = df["chiefcomplaint"].str.contains(pattern, case=False, na=False)
-        df = df[mask].reset_index(drop=True)
+        pattern = "|".join(re.escape(kw) for kw in f["keywords"])
+        return df["chiefcomplaint"].str.contains(pattern, case=False, na=False)
 
-    elif subset_type == "icd_chapter":
+    if ftype == "icd_chapter":
         _ICD_CHAPTER_PREFIXES = {
             "cardiovascular":   "I",
             "respiratory":      "J",
@@ -135,7 +149,7 @@ def apply_subset(df: pd.DataFrame, subset_cfg: dict) -> pd.DataFrame:
             "injury_trauma":    ("S", "T"),
             "oncology":         "C",
         }
-        chapter = subset_cfg["chapter"]
+        chapter = f["chapter"]
         prefix = _ICD_CHAPTER_PREFIXES.get(chapter)
         if prefix is None:
             raise ValueError(f"Unknown ICD chapter '{chapter}'. Options: {list(_ICD_CHAPTER_PREFIXES)}")
@@ -147,9 +161,9 @@ def apply_subset(df: pd.DataFrame, subset_cfg: dict) -> pd.DataFrame:
         else:
             in_chapter = primary["icd_code"].str.strip().str.startswith(prefix)
         stay_ids = set(primary.loc[in_chapter, "stay_id"])
-        df = df[df["stay_id"].isin(stay_ids)].reset_index(drop=True)
+        return df["stay_id"].isin(stay_ids)
 
-    elif subset_type == "active_cancer_treatment":
+    if ftype == "active_cancer_treatment":
         # Identify patients on active systemic cancer treatment via home med reconciliation
         # (medrecon table, recorded at triage — no outcome leakage).
         #
@@ -177,14 +191,60 @@ def apply_subset(df: pd.DataFrame, subset_cfg: dict) -> pd.DataFrame:
         is_antineopl = desc_lower.str.contains("antineoplast", na=False)
         is_excluded  = desc_lower.isin({c.lower() for c in _EXCLUDED_CLASSES})
         stay_ids = set(medrecon[is_antineopl & ~is_excluded]["stay_id"])
-        df = df[df["stay_id"].isin(stay_ids)].reset_index(drop=True)
+        return df["stay_id"].isin(stay_ids)
 
+    raise ValueError(
+        f"Unknown subset filter type '{ftype}'. "
+        "Options: acuity, age, disposition, chief_complaint, icd_chapter, active_cancer_treatment"
+    )
+
+
+def apply_subset(df: pd.DataFrame, subset_cfg: dict) -> pd.DataFrame:
+    """Filter the ED dataframe to a named clinical subset, then optionally subsample.
+
+    Single filter (a ``type`` at the top level):
+      type: acuity            values: [1, 2]
+      type: age               min: 75   max: null     # either bound optional
+      type: disposition       values: [ADMITTED]
+      type: chief_complaint   keywords: [fall, weakness, confusion]
+      type: icd_chapter       chapter: cardiovascular
+          (cardiovascular | respiratory | gastrointestinal | musculoskeletal
+           | mental_health | genitourinary | injury_trauma | oncology)
+      type: active_cancer_treatment
+
+    Composite filter (AND-combined) — e.g. Geriatric ESI 1+2:
+      name: Geriatric ESI 1+2
+      filters:
+        - {type: age, min: 75}
+        - {type: acuity, values: [1, 2]}
+
+    Random subsample — standalone, or appended to any filter via ``sample_n``:
+      type: random_sample   n: 10000   seed: 42
+      # or:  filters: [...]   sample_n: 10000   seed: 42
+    """
+    n_before = len(df)
+    subset_type = subset_cfg.get("type")
+
+    if "filters" in subset_cfg:
+        filters = subset_cfg["filters"]
+    elif subset_type in (None, "random_sample"):
+        filters = []
     else:
-        raise ValueError(
-            f"Unknown subset type '{subset_type}'. "
-            "Options: acuity, disposition, chief_complaint, icd_chapter, active_cancer_treatment"
-        )
+        filters = [subset_cfg]
 
+    mask = pd.Series(True, index=df.index)
+    for f in filters:
+        mask &= _subset_mask(df, f)
+    df = df[mask].reset_index(drop=True)
+
+    sample_n = subset_cfg.get("n") if subset_type == "random_sample" else subset_cfg.get("sample_n")
+    if sample_n is not None and len(df) > sample_n:
+        seed = subset_cfg.get("seed", 42)
+        df = df.sample(n=int(sample_n), random_state=seed).reset_index(drop=True)
+
+    label = subset_cfg.get("name", subset_type or "composite")
+    pct = (len(df) / n_before * 100) if n_before else 0.0
+    print(f"  Subset [{label}]: {n_before:,} → {len(df):,} stays ({pct:.1f}%)")
     return df
 
 

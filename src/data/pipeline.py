@@ -37,6 +37,15 @@ def run_pipeline(task, config: dict) -> dict:
     X_tv, X_test_raw, y_tv, y_test = train_test_split(X_arr, y_arr, test_size=0.15, random_state=seed)
     X_tr_raw, X_val_raw, y_train, y_val = train_test_split(X_tv, y_tv, test_size=0.176, random_state=seed)
 
+    # Optional test-set cap: subsample the test split to keep slow in-context models
+    # (TabPFN / ConTextTab) tractable. Applied uniformly with the run seed so every
+    # model in a sweep is evaluated on the identical rows — keeps metrics comparable.
+    test_cap = (config.get("eval") or {}).get("test_cap")
+    if test_cap and len(X_test_raw) > test_cap:
+        cap_idx = np.random.default_rng(seed).choice(len(X_test_raw), size=int(test_cap), replace=False)
+        X_test_raw, y_test = X_test_raw[cap_idx], y_test[cap_idx]
+        print(f"  Test cap: evaluating on {test_cap:,} of {len(X_arr) - len(X_tv):,} test rows")
+
     miss_cfg = config.get("missingness")
     if miss_cfg and miss_cfg.get("rate", 0) > 0:
         X_tr_raw, X_val_raw, X_test_raw = _inject_missingness(
