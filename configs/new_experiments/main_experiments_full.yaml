@@ -1,0 +1,23 @@
+# MAIN EXPERIMENTS — LOS + Mortality. The full planned matrix (5 experiments x 2 tasks).
+# Self-contained under new_experiments/. Usage:
+#   python run.py configs/new_experiments/main_experiments_full.yaml
+# Total: 576 runs (288 per task). Heavy — run overnight / on a server (ConTextTab needs CUDA).
+
+runs:
+  # ---- LOS ----
+  - configs/new_experiments/los_allmech_proposed_sweep.yaml
+  - configs/new_experiments/los_mnar_proposed_imputers_sweep.yaml
+  - configs/new_experiments/los_subset_proposed_sweep.yaml
+  - configs/new_experiments/los_allmech_baselines_sweep.yaml
+  - configs/new_experiments/los_mnar_baselines_imputers_sweep.yaml
+  - configs/new_experiments/los_subset_baselines_sweep.yaml
+  # ---- Mortality ----
+  - configs/new_experiments/mortality_allmech_proposed_sweep.yaml
+  - configs/new_experiments/mortality_mnar_proposed_imputers_sweep.yaml
+  - configs/new_experiments/mortality_subset_proposed_sweep.yaml
+  - configs/new_experiments/mortality_allmech_baselines_sweep.yaml
+  - configs/new_experiments/mortality_mnar_baselines_imputers_sweep.yaml
+  - configs/new_experiments/mortality_subset_baselines_sweep.yaml
+
+plots:
+  - src/analysis/plot_sweep.py

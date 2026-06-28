@@ -1,0 +1,30 @@
+# EXPERIMENT 3 (FM) — LOS, simple vs deep imputation fed to the foundation models, MNAR only.
+# NO native_nan: FMs receive imputed input, so the imputer choice is the variable under test.
+#   simple: mean, mice    deep: gain
+# The no-impute reference is the MNAR slice of los_allmech_proposed_sweep.
+# 3 seeds x 3 rates x 2 models x 3 imputers = 54 runs.
+
+sweep:
+  seed: [42, 123, 456]
+  missingness.rate: [0.1, 0.25, 0.5]
+  model.type: [contexttab, tabpfn]
+  imputation.method: [mean, mice, gain]
+
+defaults:
+  task: length_of_stay
+  quick: false
+  data:
+    embeddings: false
+  missingness:
+    mechanism: MNAR
+    strength: 1.0
+    columns: null
+    drivers_map: null
+  imputation:
+    max_iter: 10
+    iterations: 10000
+    batch_size: 128
+  model:
+    params:
+      n_estimators: 4       # TabPFN (ignored for contexttab)
+      bagging: 8            # ConTextTab (ignored for tabpfn)

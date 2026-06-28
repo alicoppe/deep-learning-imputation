@@ -1,0 +1,22 @@
+# MAIN EXPERIMENTS — LOS only ("start here"). Self-contained; maps 1:1 to the 5 planned experiments.
+# Usage: python run.py configs/new_experiments/main_experiments_los.yaml
+#
+#   Exp 1  FM under MNAR ............ slice mechanism==MNAR from allmech_proposed
+#   Exp 2  FM under all mechanisms .. los_allmech_proposed_sweep          (54)
+#   Exp 3  FM simple vs deep impute . los_mnar_proposed_imputers_sweep    (54)
+#   Exp 4  FM on subsets ............ los_subset_proposed_sweep           (36)
+#   Exp 5  baselines vs everything .. los_allmech_baselines_sweep         (54)
+#                                     los_mnar_baselines_imputers_sweep   (54)
+#                                     los_subset_baselines_sweep          (36)
+# Total: 288 runs (FM 144 + baselines 144).
+
+runs:
+  - configs/new_experiments/los_allmech_proposed_sweep.yaml
+  - configs/new_experiments/los_mnar_proposed_imputers_sweep.yaml
+  - configs/new_experiments/los_subset_proposed_sweep.yaml
+  - configs/new_experiments/los_allmech_baselines_sweep.yaml
+  - configs/new_experiments/los_mnar_baselines_imputers_sweep.yaml
+  - configs/new_experiments/los_subset_baselines_sweep.yaml
+
+plots:
+  - src/analysis/plot_sweep.py

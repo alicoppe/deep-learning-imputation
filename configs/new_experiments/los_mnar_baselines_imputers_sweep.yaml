@@ -1,0 +1,40 @@
+# EXPERIMENT 3 (baselines) — LOS, imputation comparison for traditional models, MNAR.
+# Mirror of los_mnar_proposed_imputers_sweep. Both downstream models require imputed
+# input (needs_imputed=True), so the imputer choice actually matters here.
+#   - simple: mean, mice    deep: gain
+# Native (no-impute) reference comes from the XGBoost arm of los_allmech_baselines (MNAR slice).
+# 3 seeds x 3 rates x 2 models x 3 imputers = 54 runs.
+
+sweep:
+  seed: [42, 123, 456]
+  missingness.rate: [0.1, 0.25, 0.5]
+  model.type: [mlp, xgboost_imputed]
+  imputation.method: [mean, mice, gain]
+
+defaults:
+  task: length_of_stay
+  quick: false
+  data:
+    embeddings: false
+  missingness:
+    mechanism: MNAR
+    strength: 1.0
+    columns: null
+    drivers_map: null
+  imputation:
+    max_iter: 10
+    iterations: 10000
+    batch_size: 128
+  model:
+    params:
+      hidden_dims: [512, 256, 128]
+      dropout: 0.2
+      epochs: 60
+      patience: 10
+      batch_size: 512
+      lr: 0.001
+      n_estimators: 2000
+      max_depth: 6
+      learning_rate: 0.05
+      early_stopping_rounds: 50
+      n_jobs: 4

@@ -1,0 +1,39 @@
+# EXPERIMENT 4 (baselines) — Mortality, traditional models on clinical subsets, MNAR only.
+# Mirror of mortality_subset_proposed_sweep.
+#   - mlp      → median-imputed + scaled (blind)
+#   - xgboost  → raw NaN, implicit handling
+# 3 seeds x 3 rates x 2 models x 2 subsets = 36 runs.
+
+sweep:
+  seed: [42, 123, 456]
+  missingness.rate: [0.1, 0.25, 0.5]
+  model.type: [mlp, xgboost]
+  data.subset:
+    - {name: geriatric_85_esi12, filters: [{type: age, min: 85}, {type: acuity, values: [1, 2]}]}
+    - {name: cancer_tx, type: active_cancer_treatment}
+
+defaults:
+  task: in_hospital_mortality
+  quick: false
+  data:
+    embeddings: false
+  missingness:
+    mechanism: MNAR
+    strength: 1.0
+    columns: null
+    drivers_map: null
+  imputation:
+    method: median            # used only by the MLP path
+  model:
+    params:
+      hidden_dims: [512, 256, 128]
+      dropout: 0.2
+      epochs: 60
+      patience: 10
+      batch_size: 512
+      lr: 0.001
+      n_estimators: 2000
+      max_depth: 6
+      learning_rate: 0.05
+      early_stopping_rounds: 50
+      n_jobs: 4

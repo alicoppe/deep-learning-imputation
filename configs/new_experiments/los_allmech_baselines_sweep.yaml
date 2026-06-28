@@ -1,0 +1,36 @@
+# EXPERIMENT 1+2 (baselines) — LOS, traditional models across all mechanisms.
+# Mirror of los_all_proposed_sweep. Slice mechanism==MNAR for the Exp-1 headline.
+#   - mlp      → median-imputed + scaled (blind: no missingness indicator)
+#   - xgboost  → raw NaN, handled implicitly by tree splits
+# 3 seeds x 3 mechanisms x 3 rates x 2 models = 54 runs.
+
+sweep:
+  seed: [42, 123, 456]
+  missingness.mechanism: [MCAR, MAR, MNAR]
+  missingness.rate: [0.1, 0.25, 0.5]
+  model.type: [mlp, xgboost]
+
+defaults:
+  task: length_of_stay
+  quick: false
+  data:
+    embeddings: false
+  missingness:
+    strength: 1.0
+    columns: null
+    drivers_map: null
+  imputation:
+    method: median            # used only by the MLP path (needs_imputed=True)
+  model:
+    params:
+      hidden_dims: [512, 256, 128]
+      dropout: 0.2
+      epochs: 60
+      patience: 10
+      batch_size: 512
+      lr: 0.001
+      n_estimators: 2000
+      max_depth: 6
+      learning_rate: 0.05
+      early_stopping_rounds: 50
+      n_jobs: 4
